@@ -1,0 +1,1955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Store Manager</title>
+<!--
+  Store Manager — open-source single-file edition
+  ----------------------------------------------------------
+  A FIFO-costed inventory, sales, purchases, loans and reporting app
+  for any small shop that buys stock and resells it — hardware,
+  grocery, pharmacy, electronics, clothing, or anything similar.
+  "Items" and "categories" are just labels you fill in yourself, so
+  nothing here assumes a particular trade.
+
+  No backend, no account, no network calls — every record lives in
+  this browser's localStorage. Open this file (or host it anywhere
+  static) and it just works.
+
+  This is a from-scratch local-storage rewrite of a Flutter + Firebase
+  app originally built for one specific shop. It has no connection to
+  that shop's data or Firebase project — everything here is generic
+  and safe to publish. A Firebase-backed, multi-device version of this
+  app also exists, but it requires real technical setup (a Firebase
+  project, API keys, an Android signing key, a Flutter build
+  toolchain) rather than being something you can just open and use —
+  it isn't included here.
+
+  License: PolyForm Noncommercial 1.0.0 — free to use, study, modify
+  and share for any noncommercial purpose; not for resale. See LICENSE.
+-->
+<style>
+  :root {
+    --primary: #C2571B;
+    --primary-container: #FFE0C7;
+    --secondary: #5B6B73;
+    --surface: #FFFBF7;
+    --surface-alt: #F3ECE3;
+    --text: #2A2420;
+    --text-muted: #6B6158;
+    --border: #E4D9CB;
+    --positive: #2E7D4F;
+    --negative: #C1352B;
+    --warning: #B8790F;
+    --radius-sm: 8px;
+    --radius-md: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--surface);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  #app {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header.topbar {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 10;
+  }
+  header.topbar .back {
+    border: none;
+    background: none;
+    font-size: 20px;
+    line-height: 1;
+    padding: 6px;
+    margin: -6px;
+    cursor: pointer;
+    color: var(--text);
+  }
+  header.topbar h1 {
+    font-size: 19px;
+    font-weight: 700;
+    margin: 0;
+    flex: 1;
+  }
+  header.topbar .icon-btn {
+    border: none;
+    background: none;
+    font-size: 18px;
+    padding: 8px;
+    cursor: pointer;
+    color: var(--text);
+    border-radius: 999px;
+    position: relative;
+  }
+  header.topbar .icon-btn:active { background: var(--surface-alt); }
+  header.topbar .badge {
+    position: absolute;
+    top: 2px; right: 2px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    min-width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 3px;
+  }
+
+  main {
+    flex: 1;
+    padding: 16px;
+    padding-bottom: 32px;
+  }
+
+  h2.section-title { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
+
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .stat-tile {
+    background: var(--surface-alt);
+    border-radius: var(--radius-sm);
+    padding: 10px 8px;
+    text-align: center;
+  }
+  .stat-tile.positive { background: color-mix(in srgb, var(--positive) 14%, var(--surface)); }
+  .stat-tile.negative { background: color-mix(in srgb, var(--negative) 12%, var(--surface)); }
+  .stat-tile .label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+  .stat-tile .value { font-size: 17px; font-weight: 700; margin-top: 2px; }
+  .stat-tile .delta { font-size: 11px; font-weight: 700; margin-top: 2px; }
+  .stat-tile .delta.up { color: var(--positive); }
+  .stat-tile .delta.down { color: var(--negative); }
+
+  .banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: color-mix(in srgb, var(--warning) 14%, var(--surface));
+    border-left: 4px solid var(--warning);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    cursor: pointer;
+  }
+  .banner .arrow { margin-left: auto; opacity: .6; }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 56px;
+    border-radius: var(--radius-md);
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+  }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.primary:active { filter: brightness(0.92); }
+  .btn.outline { background: transparent; border: 1.5px solid var(--border); color: var(--text); }
+  .btn.ghost { background: var(--surface-alt); color: var(--text); }
+  .btn.danger { background: var(--negative); color: #fff; }
+  .btn.small { height: 40px; font-size: 13px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .ticket {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--secondary);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+  .ticket.sale { border-left-color: var(--primary); }
+  .ticket.low { border-left-color: var(--negative); background: color-mix(in srgb, var(--negative) 6%, #fff); }
+  .ticket .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .ticket .title { font-weight: 600; font-size: 14px; }
+  .ticket .sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .ticket .trail { font-weight: 700; font-size: 14px; white-space: nowrap; }
+  .ticket .menu-btn { border: none; background: none; font-size: 18px; cursor: pointer; padding: 4px 6px; color: var(--text-muted); }
+
+  .line-item { display: flex; justify-content: space-between; font-size: 12.5px; padding: 4px 0; color: var(--text-muted); border-top: 1px dashed var(--border); }
+  .line-item:first-child { border-top: none; margin-top: 4px; }
+
+  input, select, textarea {
+    width: 100%;
+    font-size: 15px;
+    padding: 13px 14px;
+    border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
+  label.field-label { font-size: 12.5px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 5px; }
+  .field { margin-bottom: 14px; }
+  .reference-note { font-size: 12px; color: var(--text-muted); margin-top: 5px; }
+
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    border: 1.5px solid var(--border);
+    background: #fff;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .chip.selected { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .chip.dismissable { background: var(--primary-container); border-color: var(--primary-container); color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
+
+  .segmented { display: flex; border: 1.5px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .segmented button {
+    flex: 1; border: none; background: #fff; padding: 10px 6px; font-size: 13px; font-weight: 600;
+    cursor: pointer; color: var(--text-muted); border-left: 1px solid var(--border);
+  }
+  .segmented button:first-child { border-left: none; }
+  .segmented button.active { background: var(--primary); color: #fff; }
+
+  .empty-state { text-align: center; color: var(--text-muted); padding: 40px 16px; font-size: 14px; }
+
+  .fab {
+    position: fixed;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    right: calc(50% - 240px + 20px);
+    width: 56px; height: 56px;
+    border-radius: 18px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    font-size: 26px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.2);
+    cursor: pointer;
+    z-index: 20;
+  }
+  @media (max-width: 520px) {
+    .fab { right: 20px; }
+  }
+
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(20,14,8,0.45);
+    display: flex; align-items: flex-end; justify-content: center;
+    z-index: 100;
+  }
+  .modal-overlay.center { align-items: center; padding: 20px; }
+  .modal-sheet {
+    background: var(--surface);
+    width: 100%;
+    max-width: 480px;
+    max-height: 88vh;
+    overflow-y: auto;
+    border-radius: 20px 20px 0 0;
+    padding: 20px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+  .modal-overlay.center .modal-sheet { border-radius: 18px; max-height: 80vh; }
+  .modal-sheet h3 { margin: 0 0 16px; font-size: 18px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .modal-actions .btn { flex: 1; }
+
+  .toast {
+    position: fixed;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    left: 50%; transform: translateX(-50%);
+    background: #2A2420; color: #fff;
+    padding: 12px 18px;
+    border-radius: 12px;
+    font-size: 13.5px;
+    display: flex; align-items: center; gap: 14px;
+    z-index: 200;
+    max-width: 90%;
+  }
+  .toast button { background: none; border: none; color: var(--primary-container); font-weight: 700; font-size: 13px; cursor: pointer; }
+
+  .pin-dots { display: flex; justify-content: center; gap: 14px; margin: 20px 0; }
+  .pin-dots span { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--primary); }
+  .pin-dots span.filled { background: var(--primary); }
+
+  .balance-card { text-align: center; padding: 18px; border-radius: var(--radius-md); margin-bottom: 16px; }
+
+  svg.chart-svg { width: 100%; height: auto; display: block; }
+
+  .cat-section { margin-top: 20px; }
+  .muted { color: var(--text-muted); }
+  .small-text { font-size: 12.5px; }
+  .center-text { text-align: center; }
+  .flex-between { display: flex; justify-content: space-between; align-items: center; }
+  .spacer-8 { height: 8px; } .spacer-12 { height: 12px; } .spacer-16 { height: 16px; } .spacer-20 { height: 20px; } .spacer-24 { height: 24px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+<script>
+/* =====================================================================
+   DATA LAYER — everything lives in one localStorage key as plain JSON.
+   No network, no accounts. This is the entire "backend".
+   ===================================================================== */
+const DB_KEY = 'hsm_data_v1';
+
+function loadDB() {
+  const raw = localStorage.getItem(DB_KEY);
+  if (raw) {
+    try { return JSON.parse(raw); } catch (e) { /* fall through to fresh */ }
+  }
+  return {
+    items: [],        // {id, name, category, defaultSellingPrice, lowStockThreshold}
+    suppliers: [],     // {id, name, phone}
+    batches: [],       // {id, itemId, purchaseId, purchaseDate, costPerUnit, quantityOriginal, quantityRemaining}
+    purchases: [],      // {id, supplierId, supplierName, date, items:[{itemId,itemName,quantity,costPerUnit,batchId}]}
+    sales: [],          // {id, date, items:[{itemId,itemName,quantity,salePricePerUnit,costBreakdown:[{batchId,qtyTaken,costPerUnit}]}], totalRevenue, totalCost, totalProfit}
+    loanPeople: [],     // {id, name, phone}
+    loanEntries: [],    // {id, personId, direction:'weOweThem'|'theyOweUs', amount, note, date}
+    auth: null,         // {salt, hash} — null means no password set yet
+  };
+}
+
+let DB = loadDB();
+
+function save() {
+  localStorage.setItem(DB_KEY, JSON.stringify(DB));
+}
+
+function uid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+}
+
+function fmt(n) {
+  const v = Math.round((n || 0) * 100) / 100;
+  return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function todayISO() {
+  return new Date().toISOString();
+}
+
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/* =====================================================================
+   SIMPLE LOCAL PASSWORD LOCK
+   Not cryptographically hardened — this exists only to keep the app's
+   screen from being casually opened by someone else on a shared device,
+   the same way the original app's PIN did. It is not protecting
+   sensitive data from a determined attacker with access to the device.
+   ===================================================================== */
+function simpleHash(str) {
+  // djb2 — fast, deterministic, good enough for a local screen-lock.
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(16);
+}
+
+function hashPassword(password, salt) {
+  return simpleHash(salt + ':' + password);
+}
+
+function setPassword(password) {
+  const salt = uid();
+  DB.auth = { salt, hash: hashPassword(password, salt) };
+  save();
+}
+
+function verifyPassword(password) {
+  if (!DB.auth) return false;
+  return hashPassword(password, DB.auth.salt) === DB.auth.hash;
+}
+
+/* =====================================================================
+   FIFO ENGINE — mirrors the original app's cost-basis logic exactly:
+   oldest batch is always consumed first, and profit is always
+   (manual sale price × qty) minus the FIFO cost of what was actually
+   consumed. This is the one part of the app where correctness matters
+   more than anywhere else.
+   ===================================================================== */
+class InsufficientStockError extends Error {
+  constructor(itemId, requested, available) {
+    super(`Insufficient stock`);
+    this.itemId = itemId;
+    this.requested = requested;
+    this.available = available;
+  }
+}
+
+function stockForItem(itemId) {
+  return DB.batches
+    .filter(b => b.itemId === itemId)
+    .reduce((sum, b) => sum + b.quantityRemaining, 0);
+}
+
+function stockByItem() {
+  const map = {};
+  for (const b of DB.batches) {
+    map[b.itemId] = (map[b.itemId] || 0) + b.quantityRemaining;
+  }
+  return map;
+}
+
+// Oldest-first batches with stock remaining for one item.
+function orderedAvailableBatches(itemId) {
+  return DB.batches
+    .filter(b => b.itemId === itemId && b.quantityRemaining > 0)
+    .sort((a, b) => new Date(a.purchaseDate) - new Date(b.purchaseDate));
+}
+
+// Consumes qtyRequested from the item's oldest batches. Mutates DB
+// batches in place. Throws InsufficientStockError without mutating
+// anything if there isn't enough stock — caller should check this
+// for every line BEFORE committing any line, so a multi-item sale
+// never partially applies.
+function fifoConsume(itemId, qtyRequested) {
+  const batches = orderedAvailableBatches(itemId);
+  const available = batches.reduce((s, b) => s + b.quantityRemaining, 0);
+  if (qtyRequested > available) {
+    throw new InsufficientStockError(itemId, qtyRequested, available);
+  }
+  let remaining = qtyRequested;
+  const consumptions = [];
+  for (const batch of batches) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, batch.quantityRemaining);
+    if (take <= 0) continue;
+    consumptions.push({ batchId: batch.id, qtyTaken: take, costPerUnit: batch.costPerUnit });
+    batch.quantityRemaining -= take;
+    remaining -= take;
+  }
+  return consumptions;
+}
+
+// Reverses a sale's recorded consumption — used by edit/delete.
+function fifoReverse(costBreakdown) {
+  for (const c of costBreakdown) {
+    const batch = DB.batches.find(b => b.id === c.batchId);
+    if (batch) batch.quantityRemaining += c.qtyTaken;
+  }
+}
+
+/* =====================================================================
+   TRANSACTIONS — purchases create batches; sales consume them via FIFO.
+   Every save/edit/delete here mirrors the original Firestore-transaction
+   logic, just against the in-memory DB object instead of a server.
+   ===================================================================== */
+
+function savePurchase({ supplierId, supplierName, lines, date }) {
+  const purchaseId = uid();
+  const effectiveDate = date || todayISO();
+  const itemsJson = [];
+  for (const line of lines) {
+    const batchId = uid();
+    DB.batches.push({
+      id: batchId,
+      itemId: line.itemId,
+      purchaseId,
+      purchaseDate: effectiveDate,
+      costPerUnit: line.unitPrice,
+      quantityOriginal: line.quantity,
+      quantityRemaining: line.quantity,
+    });
+    itemsJson.push({
+      itemId: line.itemId, itemName: line.itemName,
+      quantity: line.quantity, costPerUnit: line.unitPrice, batchId,
+    });
+  }
+  DB.purchases.push({
+    id: purchaseId, supplierId, supplierName, date: effectiveDate, items: itemsJson,
+  });
+  save();
+  return purchaseId;
+}
+
+function saveSale({ lines, date }) {
+  const saleId = uid();
+  const effectiveDate = date || todayISO();
+
+  // Validate every line BEFORE mutating anything, so a multi-item sale
+  // never applies half its lines when a later line runs out of stock.
+  for (const line of lines) {
+    const available = stockForItem(line.itemId);
+    if (line.quantity > available) {
+      throw new InsufficientStockError(line.itemId, line.quantity, available);
+    }
+  }
+
+  let totalRevenue = 0, totalCost = 0;
+  const itemsJson = [];
+  for (const line of lines) {
+    const consumptions = fifoConsume(line.itemId, line.quantity);
+    const lineCost = consumptions.reduce((s, c) => s + c.qtyTaken * c.costPerUnit, 0);
+    const lineRevenue = line.unitPrice * line.quantity;
+    totalRevenue += lineRevenue;
+    totalCost += lineCost;
+    itemsJson.push({
+      itemId: line.itemId, itemName: line.itemName, quantity: line.quantity,
+      salePricePerUnit: line.unitPrice, costBreakdown: consumptions,
+    });
+  }
+
+  DB.sales.push({
+    id: saleId, date: effectiveDate, items: itemsJson,
+    totalRevenue, totalCost, totalProfit: totalRevenue - totalCost,
+  });
+  save();
+  return saleId;
+}
+
+function deleteSale(saleId) {
+  const sale = DB.sales.find(s => s.id === saleId);
+  if (!sale) return;
+  for (const item of sale.items) fifoReverse(item.costBreakdown);
+  DB.sales = DB.sales.filter(s => s.id !== saleId);
+  save();
+}
+
+function editSale(saleId, { lines, date }) {
+  const existing = DB.sales.find(s => s.id === saleId);
+  const effectiveDate = date || (existing ? existing.date : todayISO());
+  deleteSale(saleId);
+  return saveSale({ lines, date: effectiveDate });
+}
+
+class PurchaseHasConsumedStockError extends Error {
+  constructor(affectedItemNames) {
+    super('Purchase has consumed stock');
+    this.affectedItemNames = affectedItemNames;
+  }
+}
+
+function deletePurchase(purchaseId) {
+  const purchase = DB.purchases.find(p => p.id === purchaseId);
+  if (!purchase) return;
+  const affected = [];
+  for (const item of purchase.items) {
+    const batch = DB.batches.find(b => b.id === item.batchId);
+    if (batch && batch.quantityRemaining < batch.quantityOriginal) {
+      affected.push(item.itemName);
+    }
+  }
+  if (affected.length > 0) {
+    throw new PurchaseHasConsumedStockError(affected);
+  }
+  DB.batches = DB.batches.filter(b => b.purchaseId !== purchaseId);
+  DB.purchases = DB.purchases.filter(p => p.id !== purchaseId);
+  save();
+}
+
+function editPurchase(purchaseId, { supplierId, supplierName, lines, date }) {
+  const existing = DB.purchases.find(p => p.id === purchaseId);
+  const effectiveDate = date || (existing ? existing.date : todayISO());
+  deletePurchase(purchaseId); // throws if stock already sold — left to caller to handle
+  return savePurchase({ supplierId, supplierName, lines, date: effectiveDate });
+}
+
+/* =====================================================================
+   APP SHELL — a tiny hash-free router: `state.view` says what to show,
+   `render()` repaints #app entirely. Simple, and plenty fast at the
+   data sizes a small shop will ever have.
+   ===================================================================== */
+const state = {
+  view: 'locked',       // locked | dashboard | inventory | suppliers | loans | loanPerson | reports | compare | saleForm | purchaseForm
+  unlocked: false,
+  loanPersonId: null,
+  reportFilters: { itemIds: [], categories: [], supplierIds: [] },
+};
+
+function go(view, extra) {
+  state.view = view;
+  Object.assign(state, extra || {});
+  render();
+  window.scrollTo(0, 0);
+}
+
+function render() {
+  const app = document.getElementById('app');
+  app.innerHTML = renderView();
+  wireView();
+}
+
+function renderView() {
+  switch (state.view) {
+    case 'locked': return renderLockScreen();
+    case 'dashboard': return renderDashboard();
+    case 'inventory': return renderInventory();
+    case 'suppliers': return renderSuppliers();
+    case 'loans': return renderLoans();
+    case 'loanPerson': return renderLoanPersonDetail(state.loanPersonId);
+    case 'reports': return renderReports();
+    case 'compare': return renderCompare();
+    case 'saleForm': return renderSaleForm();
+    case 'purchaseForm': return renderPurchaseForm();
+    default: return renderDashboard();
+  }
+}
+
+function wireView() {
+  switch (state.view) {
+    case 'locked': return wireLockScreen();
+    case 'dashboard': return wireDashboard();
+    case 'inventory': return wireInventory();
+    case 'suppliers': return wireSuppliers();
+    case 'loans': return wireLoans();
+    case 'loanPerson': return wireLoanPersonDetail();
+    case 'reports': return wireReports();
+    case 'compare': return wireCompare();
+    case 'saleForm': return wireSaleForm();
+    case 'purchaseForm': return wirePurchaseForm();
+  }
+}
+
+function topbar(title, { back, actions } = {}) {
+  return `
+  <header class="topbar">
+    ${back ? `<button class="back" data-back>&#8592;</button>` : ''}
+    <h1>${title}</h1>
+    ${(actions || []).join('')}
+  </header>`;
+}
+
+function iconBtn(icon, dataAttr, badge) {
+  return `<button class="icon-btn" ${dataAttr}>${icon}${badge ? `<span class="badge">${badge}</span>` : ''}</button>`;
+}
+
+/* ---------- Modal helper ---------- */
+function openModal(innerHtml, { center } = {}) {
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `<div class="modal-overlay ${center ? 'center' : ''}" data-modal-overlay><div class="modal-sheet" data-modal-sheet>${innerHtml}</div></div>`;
+  root.querySelector('[data-modal-overlay]').addEventListener('click', (e) => {
+    if (e.target.hasAttribute('data-modal-overlay')) closeModal();
+  });
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+
+/* ---------- Toast helper ---------- */
+let toastTimer = null;
+function showToast(message, { actionLabel, onAction, duration = 3000 } = {}) {
+  const root = document.getElementById('toast-root');
+  clearTimeout(toastTimer);
+  root.innerHTML = `<div class="toast"><span>${message}</span>${actionLabel ? `<button data-toast-action>${actionLabel}</button>` : ''}</div>`;
+  if (actionLabel && onAction) {
+    root.querySelector('[data-toast-action]').addEventListener('click', () => {
+      root.innerHTML = '';
+      clearTimeout(toastTimer);
+      onAction();
+    });
+  }
+  toastTimer = setTimeout(() => { root.innerHTML = ''; }, duration);
+}
+
+function confirmDialog(title, message, confirmLabel, onConfirm, danger = true) {
+  openModal(`
+    <h3>${title}</h3>
+    <p class="small-text muted">${message}</p>
+    <div class="modal-actions">
+      <button class="btn outline" data-cancel>Cancel</button>
+      <button class="btn ${danger ? 'danger' : 'primary'}" data-confirm>${confirmLabel}</button>
+    </div>
+  `, { center: true });
+  document.querySelector('[data-cancel]').addEventListener('click', closeModal);
+  document.querySelector('[data-confirm]').addEventListener('click', () => { closeModal(); onConfirm(); });
+}
+
+/* =====================================================================
+   LOCK SCREEN — set password on first use, verify on every load.
+   Includes a "Forgot password" reset (sets a new one directly, no
+   verification — a deliberate simplicity choice for a small shared
+   device) AND a proper "Change password" flow reachable once unlocked,
+   from the dashboard's settings icon, which does require the current
+   password.
+   ===================================================================== */
+let pinEntry = '';
+let pinMode = 'checking'; // setup | verify | reset
+
+function renderLockScreen() {
+  // Only derive pinMode from scratch the first time — once the user has
+  // clicked into 'reset' mode, a re-render (e.g. from the forgot-
+  // password click itself) must not silently flip it back to 'verify'
+  // just because a password already exists.
+  if (pinMode === 'checking') pinMode = DB.auth ? 'verify' : 'setup';
+  const title = pinMode === 'setup' ? 'Set a password' : pinMode === 'reset' ? 'Set a new password' : 'Enter your password';
+  const buttonLabel = pinMode === 'verify' ? 'Unlock' : 'Set password';
+  return `
+  <div style="display:flex;flex-direction:column;justify-content:center;min-height:100vh;padding:24px;">
+    <h2 class="center-text" style="font-size:20px;">${title}</h2>
+    <div class="field" style="max-width:280px;margin:20px auto 0;">
+      <input type="password" id="pin-input" placeholder="Password" autofocus />
+    </div>
+    <div id="pin-error" class="small-text center-text" style="color:var(--negative);min-height:18px;"></div>
+    <div style="max-width:280px;margin:0 auto;width:100%;" class="spacer-12"></div>
+    <div style="max-width:280px;margin:12px auto 0;width:100%;">
+      <button class="btn primary" id="pin-submit">${buttonLabel}</button>
+    </div>
+    ${pinMode === 'verify' ? `<p class="center-text small-text" style="margin-top:14px;"><a href="#" id="forgot-pin" style="color:var(--secondary);">Forgot password?</a></p>` : ''}
+  </div>`;
+}
+
+function wireLockScreen() {
+  const input = document.getElementById('pin-input');
+  const submit = document.getElementById('pin-submit');
+  const err = document.getElementById('pin-error');
+
+  function trySubmit() {
+    const val = input.value.trim();
+    if (!val) return;
+    if (pinMode === 'setup') {
+      setPassword(val);
+      state.unlocked = true;
+      go('dashboard');
+    } else if (pinMode === 'reset') {
+      setPassword(val);
+      state.unlocked = true;
+      go('dashboard');
+    } else {
+      if (verifyPassword(val)) {
+        state.unlocked = true;
+        go('dashboard');
+      } else {
+        err.textContent = 'Incorrect password. Try again.';
+        input.value = '';
+      }
+    }
+  }
+
+  submit.addEventListener('click', trySubmit);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') trySubmit(); });
+
+  const forgot = document.getElementById('forgot-pin');
+  if (forgot) {
+    forgot.addEventListener('click', (e) => {
+      e.preventDefault();
+      pinMode = 'reset';
+      render();
+    });
+  }
+}
+
+function openChangePasswordModal() {
+  openModal(`
+    <h3>Change password</h3>
+    <div class="field">
+      <label class="field-label">Current password</label>
+      <input type="password" id="cp-current" />
+    </div>
+    <div class="field">
+      <label class="field-label">New password</label>
+      <input type="password" id="cp-new" />
+    </div>
+    <div class="field">
+      <label class="field-label">Confirm new password</label>
+      <input type="password" id="cp-confirm" />
+    </div>
+    <div id="cp-error" class="small-text" style="color:var(--negative);min-height:18px;"></div>
+    <div class="modal-actions">
+      <button class="btn outline" data-cancel>Cancel</button>
+      <button class="btn primary" id="cp-save">Save</button>
+    </div>
+  `, { center: true });
+
+  document.querySelector('[data-cancel]').addEventListener('click', closeModal);
+  document.getElementById('cp-save').addEventListener('click', () => {
+    const current = document.getElementById('cp-current').value;
+    const next = document.getElementById('cp-new').value;
+    const confirm = document.getElementById('cp-confirm').value;
+    const err = document.getElementById('cp-error');
+
+    if (!verifyPassword(current)) { err.textContent = 'Current password is incorrect.'; return; }
+    if (!next) { err.textContent = 'Enter a new password.'; return; }
+    if (next !== confirm) { err.textContent = 'New passwords do not match.'; return; }
+
+    setPassword(next);
+    closeModal();
+    showToast('Password changed');
+  });
+}
+
+/* =====================================================================
+   DASHBOARD
+   ===================================================================== */
+function renderDashboard() {
+  const today = startOfDay(new Date());
+  const todaysSales = DB.sales.filter(s => new Date(s.date) >= today);
+  const revenue = todaysSales.reduce((s, x) => s + x.totalRevenue, 0);
+  const cost = todaysSales.reduce((s, x) => s + x.totalCost, 0);
+  const profit = todaysSales.reduce((s, x) => s + x.totalProfit, 0);
+
+  const stock = stockByItem();
+  const lowStockItems = DB.items.filter(it => (stock[it.id] || 0) < it.lowStockThreshold);
+
+  return `
+    ${topbar('Store Manager', {
+      actions: [
+        iconBtn('&#9881;', 'data-settings', ''),
+        iconBtn('&#128202;', 'data-reports', ''),
+      ],
+    })}
+    <main>
+      <div class="grid3">
+        <div class="stat-tile"><div class="label">Revenue</div><div class="value">${fmt(revenue)}</div></div>
+        <div class="stat-tile"><div class="label">Cost</div><div class="value">${fmt(cost)}</div></div>
+        <div class="stat-tile positive"><div class="label">Profit</div><div class="value">${fmt(profit)}</div></div>
+      </div>
+      <div class="spacer-16"></div>
+      ${lowStockItems.length > 0 ? `
+        <div class="banner" data-low-stock-banner>
+          <span>&#9888;&#65039;</span>
+          <div>
+            <strong>${lowStockItems.length} item(s) low on stock:</strong>
+            <div class="small-text">${lowStockItems.slice(0, 3).map(i => i.name).join(', ')}${lowStockItems.length > 3 ? ` +${lowStockItems.length - 3} more` : ''}</div>
+          </div>
+          <span class="arrow">&#8250;</span>
+        </div>
+        <div class="spacer-16"></div>
+      ` : ''}
+      <div class="action-grid">
+        <button class="btn primary" data-go="saleForm">&#128722; New sale</button>
+        <button class="btn primary" data-go="purchaseForm">&#128666; New purchase</button>
+      </div>
+      <div class="spacer-12"></div>
+      <button class="btn primary" data-go="inventory">&#128230; View inventory</button>
+      <div class="spacer-12"></div>
+      <div class="action-grid">
+        <button class="btn primary" data-go="suppliers">&#128666; Suppliers</button>
+        <button class="btn primary" data-go="loans">&#129309; Loans</button>
+      </div>
+    </main>
+  `;
+}
+
+function wireDashboard() {
+  document.querySelectorAll('[data-go]').forEach(el =>
+    el.addEventListener('click', () => {
+      if (el.dataset.go === 'saleForm') enterSaleForm(null);
+      else if (el.dataset.go === 'purchaseForm') enterPurchaseForm(null);
+      else go(el.dataset.go);
+    })
+  );
+  const settingsBtn = document.querySelector('[data-settings]');
+  if (settingsBtn) settingsBtn.addEventListener('click', openChangePasswordModal);
+  const reportsBtn = document.querySelector('[data-reports]');
+  if (reportsBtn) reportsBtn.addEventListener('click', () => go('reports'));
+  const lowStockBanner = document.querySelector('[data-low-stock-banner]');
+  if (lowStockBanner) lowStockBanner.addEventListener('click', () => go('inventory', { inventoryLowStockOnly: true }));
+}
+
+/* =====================================================================
+   INVENTORY
+   ===================================================================== */
+let inventoryQuery = '';
+let inventoryLowOnly = false;
+
+function renderInventory() {
+  if (state.inventoryLowStockOnly) { inventoryLowOnly = true; state.inventoryLowStockOnly = false; }
+  const stock = stockByItem();
+  let items = [...DB.items];
+  if (inventoryQuery) items = items.filter(i => i.name.toLowerCase().includes(inventoryQuery.toLowerCase()));
+  if (inventoryLowOnly) items = items.filter(i => (stock[i.id] || 0) < i.lowStockThreshold);
+  items.sort((a, b) => (stock[a.id] || 0) - (stock[b.id] || 0));
+
+  return `
+    ${topbar('Inventory', { back: true, actions: [iconBtn(inventoryLowOnly ? '&#128269;&#65039;' : '&#128269;', 'data-toggle-low', '')] })}
+    <main>
+      <div class="field"><input type="text" id="inv-search" placeholder="Search inventory..." value="${inventoryQuery}" /></div>
+      ${inventoryLowOnly ? `<div class="chip dismissable" data-clear-low-filter style="margin-bottom:12px;">Low stock only &times;</div>` : ''}
+      ${items.length === 0 ? `<div class="empty-state">No items found</div>` : items.map(it => {
+        const s = stock[it.id] || 0;
+        const low = s < it.lowStockThreshold;
+        return `
+        <div class="ticket ${low ? 'low' : ''}">
+          <div class="row">
+            <div>
+              <div class="title">${esc(it.name)}</div>
+              <div class="sub">${esc(it.category || '—')} · threshold ${fmt(it.lowStockThreshold)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="trail" style="color:${low ? 'var(--negative)' : 'var(--text)'}">${fmt(s)} left</span>
+              <button class="menu-btn" data-item-menu="${it.id}">&#8942;</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </main>
+    <button class="fab" data-add-item>+</button>
+  `;
+}
+
+function wireInventory() {
+  document.querySelector('[data-back]').addEventListener('click', () => go('dashboard'));
+  document.getElementById('inv-search').addEventListener('input', (e) => { inventoryQuery = e.target.value; render(); document.getElementById('inv-search').focus(); });
+  const toggleLow = document.querySelector('[data-toggle-low]');
+  if (toggleLow) toggleLow.addEventListener('click', () => { inventoryLowOnly = !inventoryLowOnly; render(); });
+  const clearLow = document.querySelector('[data-clear-low-filter]');
+  if (clearLow) clearLow.addEventListener('click', () => { inventoryLowOnly = false; render(); });
+  document.querySelector('[data-add-item]').addEventListener('click', () => openItemModal());
+  document.querySelectorAll('[data-item-menu]').forEach(btn =>
+    btn.addEventListener('click', () => openItemActionSheet(btn.dataset.itemMenu))
+  );
+}
+
+function openItemActionSheet(itemId) {
+  const item = DB.items.find(i => i.id === itemId);
+  openModal(`
+    <h3>${esc(item.name)}</h3>
+    <button class="btn ghost" data-edit style="margin-bottom:8px;">Edit</button>
+    <button class="btn ghost" data-delete style="color:var(--negative);">Delete</button>
+  `, { center: true });
+  document.querySelector('[data-edit]').addEventListener('click', () => { closeModal(); openItemModal(item); });
+  document.querySelector('[data-delete]').addEventListener('click', () => {
+    closeModal();
+    confirmDialog('Delete item?', `This removes "${esc(item.name)}" from the catalog. Past purchases and sales that reference it are kept for historical reports.`, 'Delete', () => {
+      DB.items = DB.items.filter(i => i.id !== itemId);
+      save();
+      render();
+    });
+  });
+}
+
+function openItemModal(existing) {
+  openModal(`
+    <h3>${existing ? 'Edit item' : 'New item'}</h3>
+    <div class="field"><label class="field-label">Name</label><input id="it-name" value="${existing ? esc(existing.name) : ''}" /></div>
+    <div class="field"><label class="field-label">Category</label><input id="it-category" value="${existing ? esc(existing.category || '') : ''}" /></div>
+    <div class="field"><label class="field-label">Default selling price (reference only)</label><input id="it-price" type="number" value="${existing ? existing.defaultSellingPrice : ''}" /></div>
+    <div class="field"><label class="field-label">Low stock threshold</label><input id="it-threshold" type="number" value="${existing ? existing.lowStockThreshold : 5}" /></div>
+    <div class="modal-actions">
+      <button class="btn outline" data-cancel>Cancel</button>
+      <button class="btn primary" data-save>${existing ? 'Save' : 'Add'}</button>
+    </div>
+  `, { center: true });
+  document.querySelector('[data-cancel]').addEventListener('click', closeModal);
+  document.querySelector('[data-save]').addEventListener('click', () => {
+    const name = document.getElementById('it-name').value.trim();
+    if (!name) return;
+    const category = document.getElementById('it-category').value.trim();
+    const defaultSellingPrice = parseFloat(document.getElementById('it-price').value) || 0;
+    const lowStockThreshold = parseFloat(document.getElementById('it-threshold').value) || 0;
+    if (existing) {
+      Object.assign(existing, { name, category, defaultSellingPrice, lowStockThreshold });
+    } else {
+      DB.items.push({ id: uid(), name, category, defaultSellingPrice, lowStockThreshold });
+    }
+    save();
+    closeModal();
+    render();
+  });
+}
+
+function esc(str) {
+  return (str || '').toString().replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* =====================================================================
+   SUPPLIERS
+   ===================================================================== */
+function renderSuppliers() {
+  return `
+    ${topbar('Suppliers', { back: true })}
+    <main>
+      ${DB.suppliers.length === 0 ? `<div class="empty-state">No suppliers yet — tap + to add one</div>` : DB.suppliers.map(s => `
+        <div class="ticket">
+          <div class="row">
+            <div>
+              <div class="title">${esc(s.name)}</div>
+              <div class="sub">${esc(s.phone || 'No phone number')}</div>
+            </div>
+            <button class="menu-btn" data-supplier-menu="${s.id}">&#8942;</button>
+          </div>
+        </div>
+      `).join('')}
+    </main>
+    <button class="fab" data-add-supplier>+</button>
+  `;
+}
+
+function wireSuppliers() {
+  document.querySelector('[data-back]').addEventListener('click', () => go('dashboard'));
+  document.querySelector('[data-add-supplier]').addEventListener('click', () => openSupplierModal());
+  document.querySelectorAll('[data-supplier-menu]').forEach(btn =>
+    btn.addEventListener('click', () => openSupplierActionSheet(btn.dataset.supplierMenu))
+  );
+}
+
+function openSupplierActionSheet(id) {
+  const supplier = DB.suppliers.find(s => s.id === id);
+  openModal(`
+    <h3>${esc(supplier.name)}</h3>
+    <button class="btn ghost" data-edit style="margin-bottom:8px;">Edit</button>
+    <button class="btn ghost" data-delete style="color:var(--negative);">Delete</button>
+  `, { center: true });
+  document.querySelector('[data-edit]').addEventListener('click', () => { closeModal(); openSupplierModal(supplier); });
+  document.querySelector('[data-delete]').addEventListener('click', () => {
+    closeModal();
+    confirmDialog('Delete supplier?', `This removes "${esc(supplier.name)}" from the picker. Past purchases keep their supplier name for historical reports.`, 'Delete', () => {
+      DB.suppliers = DB.suppliers.filter(s => s.id !== id);
+      save();
+      render();
+    });
+  });
+}
+
+function openSupplierModal(existing) {
+  openModal(`
+    <h3>${existing ? 'Edit supplier' : 'New supplier'}</h3>
+    <div class="field"><label class="field-label">Name</label><input id="sup-name" value="${existing ? esc(existing.name) : ''}" /></div>
+    <div class="field"><label class="field-label">Phone</label><input id="sup-phone" value="${existing ? esc(existing.phone || '') : ''}" /></div>
+    <div class="modal-actions">
+      <button class="btn outline" data-cancel>Cancel</button>
+      <button class="btn primary" data-save>${existing ? 'Save' : 'Add'}</button>
+    </div>
+  `, { center: true });
+  document.querySelector('[data-cancel]').addEventListener('click', closeModal);
+  document.querySelector('[data-save]').addEventListener('click', () => {
+    const name = document.getElementById('sup-name').value.trim();
+    if (!name) return;
+    const phone = document.getElementById('sup-phone').value.trim();
+    if (existing) {
+      Object.assign(existing, { name, phone });
+    } else {
+      DB.suppliers.push({ id: uid(), name, phone });
+    }
+    save();
+    closeModal();
+    render();
+  });
+}
+
+/* =====================================================================
+   ITEM PICKER — shared by both cart forms. Search existing items or
+   add a brand-new one inline, same as the original app.
+   ===================================================================== */
+function openItemPicker(onPick) {
+  let query = '';
+  function body() {
+    const filtered = DB.items.filter(i => i.name.toLowerCase().includes(query.toLowerCase()));
+    const exactExists = DB.items.some(i => i.name.toLowerCase() === query.toLowerCase());
+    return `
+      <h3>Add item</h3>
+      <div class="field"><input id="ip-search" placeholder="Search item..." value="${esc(query)}" autofocus /></div>
+      <div style="max-height:50vh;overflow-y:auto;">
+        ${filtered.map(i => `<div class="ticket" data-pick="${i.id}" style="cursor:pointer;"><div class="title">${esc(i.name)}</div><div class="sub">${esc(i.category || '')}</div></div>`).join('')}
+        ${query && !exactExists ? `<div class="ticket" data-add-new style="cursor:pointer;border-left-color:var(--primary);"><div class="title">+ Add new item "${esc(query)}"</div></div>` : ''}
+      </div>
+    `;
+  }
+  function wire() {
+    const search = document.getElementById('ip-search');
+    search.addEventListener('input', (e) => { query = e.target.value; refresh(); });
+    document.querySelectorAll('[data-pick]').forEach(el =>
+      el.addEventListener('click', () => { const item = DB.items.find(i => i.id === el.dataset.pick); closeModal(); onPick(item); })
+    );
+    const addNew = document.querySelector('[data-add-new]');
+    if (addNew) addNew.addEventListener('click', () => {
+      closeModal();
+      openItemModal(null);
+      // After the add-item modal saves, the newest item is the one
+      // just created — re-open the picker flow by handing it straight
+      // back via a one-off hook.
+      const saveBtn = document.querySelector('[data-save]');
+      if (saveBtn) {
+        const prefillName = query;
+        document.getElementById('it-name').value = prefillName;
+        saveBtn.addEventListener('click', () => {
+          const newest = DB.items[DB.items.length - 1];
+          if (newest) onPick(newest);
+        }, { once: true });
+      }
+    });
+  }
+  function refresh() {
+    document.querySelector('[data-modal-sheet]').innerHTML = body();
+    wire();
+    document.getElementById('ip-search').focus();
+    document.getElementById('ip-search').selectionStart = document.getElementById('ip-search').value.length;
+  }
+  openModal(body());
+  wire();
+}
+
+/* =====================================================================
+   NEW SALE / EDIT SALE
+   ===================================================================== */
+let cart = { lines: [], date: todayISO(), supplierId: null, supplierName: null, editId: null };
+
+function enterSaleForm(editId) {
+  if (editId) {
+    const sale = DB.sales.find(s => s.id === editId);
+    cart = {
+      editId,
+      date: sale.date,
+      supplierId: null, supplierName: null,
+      lines: sale.items.map(i => {
+        const item = DB.items.find(it => it.id === i.itemId);
+        return {
+          itemId: i.itemId, itemName: i.itemName, quantity: i.quantity, unitPrice: i.salePricePerUnit,
+          referencePrice: item && item.defaultSellingPrice > 0 ? item.defaultSellingPrice : null,
+        };
+      }),
+    };
+  } else {
+    cart = { lines: [], date: todayISO(), supplierId: null, supplierName: null, editId: null };
+  }
+  go('saleForm');
+}
+
+function renderSaleForm() {
+  const total = cart.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  return `
+    ${topbar(cart.editId ? 'Edit sale' : 'New sale', { back: true })}
+    <main>
+      <div class="field"><label class="field-label">Date</label><input type="date" id="sale-date" value="${cart.date.slice(0, 10)}" /></div>
+      <button class="btn outline" data-add-item style="margin-bottom:14px;">+ Add item</button>
+      ${cart.lines.length === 0 ? `<div class="empty-state">Cart is empty — add an item to begin</div>` :
+        cart.lines.map((l, i) => `
+        <div class="ticket sale">
+          <div class="row"><div class="title">${esc(l.itemName)}</div><button class="menu-btn" data-remove-line="${i}">&times;</button></div>
+          <div class="grid2" style="margin-top:8px;">
+            <div><label class="field-label">Qty</label><input type="number" class="qty-input" data-line="${i}" value="${l.quantity || ''}" /></div>
+            <div><label class="field-label">Sale price / unit</label><input type="number" class="price-input" data-line="${i}" value="${l.unitPrice || ''}" /></div>
+          </div>
+          ${l.referencePrice ? `<div class="reference-note">Usual sale price: ${fmt(l.referencePrice)}</div>` : ''}
+        </div>
+      `).join('')}
+      <div class="spacer-16"></div>
+      <div class="flex-between" style="padding:8px 0;border-top:1px solid var(--border);">
+        <span>Total</span><strong style="font-size:18px;">${fmt(total)}</strong>
+      </div>
+      <div class="spacer-12"></div>
+      <button class="btn primary" id="save-sale" ${cart.lines.length === 0 ? 'disabled' : ''}>${cart.editId ? 'Save changes' : 'Save sale'}</button>
+    </main>
+  `;
+}
+
+function wireSaleForm() {
+  document.querySelector('[data-back]').addEventListener('click', () => go('dashboard'));
+  document.getElementById('sale-date').addEventListener('change', (e) => { cart.date = new Date(e.target.value).toISOString(); });
+  document.querySelector('[data-add-item]').addEventListener('click', () => {
+    openItemPicker((item) => {
+      cart.lines.push({
+        itemId: item.id, itemName: item.name, quantity: 1, unitPrice: 0,
+        referencePrice: item.defaultSellingPrice > 0 ? item.defaultSellingPrice : null,
+      });
+      render();
+    });
+  });
+  document.querySelectorAll('[data-remove-line]').forEach(el =>
+    el.addEventListener('click', () => { cart.lines.splice(parseInt(el.dataset.removeLine), 1); render(); })
+  );
+  document.querySelectorAll('.qty-input').forEach(el =>
+    el.addEventListener('input', () => { cart.lines[parseInt(el.dataset.line)].quantity = parseFloat(el.value) || 0; })
+  );
+  document.querySelectorAll('.price-input').forEach(el =>
+    el.addEventListener('input', () => { cart.lines[parseInt(el.dataset.line)].unitPrice = parseFloat(el.value) || 0; })
+  );
+  document.getElementById('save-sale').addEventListener('click', () => {
+    if (cart.lines.some(l => l.quantity <= 0 || l.unitPrice <= 0)) {
+      showToast('Every line needs a quantity and a sale price greater than 0');
+      return;
+    }
+    try {
+      if (cart.editId) editSale(cart.editId, { lines: cart.lines, date: cart.date });
+      else saveSale({ lines: cart.lines, date: cart.date });
+      go('dashboard');
+      showToast(cart.editId ? 'Sale updated' : 'Sale saved');
+    } catch (e) {
+      if (e instanceof InsufficientStockError) {
+        const name = (cart.lines.find(l => l.itemId === e.itemId) || {}).itemName || e.itemId;
+        showToast(`Not enough stock for "${name}" — asked for ${fmt(e.requested)}, only ${fmt(e.available)} available.`, { duration: 5000 });
+      } else {
+        showToast('Could not save sale: ' + e.message);
+      }
+    }
+  });
+}
+
+/* =====================================================================
+   NEW PURCHASE / EDIT PURCHASE
+   ===================================================================== */
+function enterPurchaseForm(editId) {
+  if (editId) {
+    const purchase = DB.purchases.find(p => p.id === editId);
+    cart = {
+      editId,
+      date: purchase.date,
+      supplierId: purchase.supplierId, supplierName: purchase.supplierName,
+      lines: purchase.items.map(i => ({ itemId: i.itemId, itemName: i.itemName, quantity: i.quantity, unitPrice: i.costPerUnit })),
+    };
+  } else {
+    cart = { lines: [], date: todayISO(), supplierId: null, supplierName: null, editId: null };
+  }
+  go('purchaseForm');
+}
+
+function renderPurchaseForm() {
+  const total = cart.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  return `
+    ${topbar(cart.editId ? 'Edit purchase' : 'New purchase', { back: true })}
+    <main>
+      <div class="field"><label class="field-label">Date</label><input type="date" id="purchase-date" value="${cart.date.slice(0, 10)}" /></div>
+      <button class="btn outline" data-pick-supplier style="margin-bottom:10px;">${cart.supplierName ? esc(cart.supplierName) : '&#128666; Pick supplier'}</button>
+      <button class="btn outline" data-add-item style="margin-bottom:14px;">+ Add item</button>
+      ${cart.lines.length === 0 ? `<div class="empty-state">Cart is empty — add an item to begin</div>` :
+        cart.lines.map((l, i) => `
+        <div class="ticket">
+          <div class="row"><div class="title">${esc(l.itemName)}</div><button class="menu-btn" data-remove-line="${i}">&times;</button></div>
+          <div class="grid2" style="margin-top:8px;">
+            <div><label class="field-label">Qty</label><input type="number" class="qty-input" data-line="${i}" value="${l.quantity || ''}" /></div>
+            <div><label class="field-label">Cost / unit</label><input type="number" class="price-input" data-line="${i}" value="${l.unitPrice || ''}" /></div>
+          </div>
+        </div>
+      `).join('')}
+      <div class="spacer-16"></div>
+      <div class="flex-between" style="padding:8px 0;border-top:1px solid var(--border);">
+        <span>Total cost</span><strong style="font-size:18px;">${fmt(total)}</strong>
+      </div>
+      <div class="spacer-12"></div>
+      <button class="btn primary" id="save-purchase" ${cart.lines.length === 0 ? 'disabled' : ''}>${cart.editId ? 'Save changes' : 'Save purchase'}</button>
+    </main>
+  `;
+}
+
+function wirePurchaseForm() {
+  document.querySelector('[data-back]').addEventListener('click', () => go('dashboard'));
+  document.getElementById('purchase-date').addEventListener('change', (e) => { cart.date = new Date(e.target.value).toISOString(); });
+  document.querySelector('[data-pick-supplier]').addEventListener('click', openSupplierPicker);
+  document.querySelector('[data-add-item]').addEventListener('click', () => {
+    openItemPicker((item) => {
+      cart.lines.push({ itemId: item.id, itemName: item.name, quantity: 1, unitPrice: 0 });
+      render();
+    });
+  });
+  document.querySelectorAll('[data-remove-line]').forEach(el =>
+    el.addEventListener('click', () => { cart.lines.splice(parseInt(el.dataset.removeLine), 1); render(); })
+  );
+  document.querySelectorAll('.qty-input').forEach(el =>
+    el.addEventListener('input', () => { cart.lines[parseInt(el.dataset.line)].quantity = parseFloat(el.value) || 0; })
+  );
+  document.querySelectorAll('.price-input').forEach(el =>
+    el.addEventListener('input', () => { cart.lines[parseInt(el.dataset.line)].unitPrice = parseFloat(el.value) || 0; })
+  );
+  document.getElementById('save-purchase').addEventListener('click', () => {
+    if (!cart.supplierId) { showToast('Pick a supplier first'); return; }
+    if (cart.lines.some(l => l.quantity <= 0 || l.unitPrice <= 0)) {
+      showToast('Every line needs a quantity and a cost greater than 0');
+      return;
+    }
+    try {
+      if (cart.editId) editPurchase(cart.editId, { supplierId: cart.supplierId, supplierName: cart.supplierName, lines: cart.lines, date: cart.date });
+      else savePurchase({ supplierId: cart.supplierId, supplierName: cart.supplierName, lines: cart.lines, date: cart.date });
+      go('dashboard');
+      showToast(cart.editId ? 'Purchase updated' : 'Purchase saved');
+    } catch (e) {
+      if (e instanceof PurchaseHasConsumedStockError) {
+        showToast(`Can't save: stock from this purchase has already been sold (${e.affectedItemNames.join(', ')}).`, { duration: 5000 });
+      } else {
+        showToast('Could not save purchase: ' + e.message);
+      }
+    }
+  });
+}
+
+function openSupplierPicker() {
+  openModal(`
+    <h3>Suppliers</h3>
+    <div style="max-height:50vh;overflow-y:auto;">
+      ${DB.suppliers.map(s => `<div class="ticket" data-pick-sup="${s.id}" style="cursor:pointer;"><div class="title">${esc(s.name)}</div><div class="sub">${esc(s.phone || '')}</div></div>`).join('')}
+      <div class="ticket" data-add-new-sup style="cursor:pointer;border-left-color:var(--primary);"><div class="title">+ Add new supplier</div></div>
+    </div>
+  `);
+  document.querySelectorAll('[data-pick-sup]').forEach(el =>
+    el.addEventListener('click', () => {
+      const s = DB.suppliers.find(x => x.id === el.dataset.pickSup);
+      cart.supplierId = s.id; cart.supplierName = s.name;
+      closeModal();
+      render();
+    })
+  );
+  document.querySelector('[data-add-new-sup]').addEventListener('click', () => {
+    closeModal();
+    openSupplierModal();
+    const saveBtn = document.querySelector('[data-save]');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        const newest = DB.suppliers[DB.suppliers.length - 1];
+        if (newest) { cart.supplierId = newest.id; cart.supplierName = newest.name; render(); }
+      }, { once: true });
+    }
+  });
+}
+
+/* =====================================================================
+   REPORT FILTERS — shared by Reports and Compare. Filtering is at the
+   whole-transaction level (same deliberate choice as the original app):
+   a sale counts if it has at least one matching line item; a purchase
+   additionally must match the supplier filter if one is set. Totals
+   use each transaction's own recorded numbers, never a partial re-split
+   of a single transaction's line items.
+   ===================================================================== */
+function filtersActive(f) {
+  return f.itemIds.length + f.categories.length + f.supplierIds.length;
+}
+
+function saleMatchesFilter(sale, filters) {
+  if (filters.itemIds.length === 0) return true;
+  return sale.items.some(i => filters.itemIds.includes(i.itemId));
+}
+function purchaseMatchesFilter(purchase, filters) {
+  if (filters.supplierIds.length > 0 && !filters.supplierIds.includes(purchase.supplierId)) return false;
+  if (filters.itemIds.length === 0) return true;
+  return purchase.items.some(i => filters.itemIds.includes(i.itemId));
+}
+
+function totalsFor(sales, purchases, filters) {
+  let revenue = 0, cost = 0, profit = 0, purchaseCost = 0, saleCount = 0, purchaseCount = 0;
+  for (const s of sales) {
+    if (!saleMatchesFilter(s, filters)) continue;
+    revenue += s.totalRevenue; cost += s.totalCost; profit += s.totalProfit; saleCount++;
+  }
+  for (const p of purchases) {
+    if (!purchaseMatchesFilter(p, filters)) continue;
+    for (const i of p.items) purchaseCost += i.quantity * i.costPerUnit;
+    purchaseCount++;
+  }
+  return { revenue, cost, profit, purchaseCost, saleCount, purchaseCount };
+}
+
+function openFilterSheet(onApply) {
+  const categories = [...new Set(DB.items.map(i => i.category).filter(Boolean))];
+  const f = state.reportFilters;
+  function body() {
+    return `
+      <h3>Filters</h3>
+      ${categories.length > 0 ? `
+        <label class="field-label">Category</label>
+        <div class="chip-row" style="margin-bottom:16px;">
+          ${categories.map(c => `<span class="chip ${f.categories.includes(c) ? 'selected' : ''}" data-cat="${esc(c)}">${esc(c)}</span>`).join('')}
+        </div>` : ''}
+      <label class="field-label">Item</label>
+      <div class="chip-row" style="margin-bottom:16px;">
+        ${DB.items.map(i => `<span class="chip ${f.itemIds.includes(i.id) ? 'selected' : ''}" data-item="${i.id}">${esc(i.name)}</span>`).join('')}
+      </div>
+      ${DB.suppliers.length > 0 ? `
+        <label class="field-label">Supplier (purchases only)</label>
+        <div class="chip-row" style="margin-bottom:16px;">
+          ${DB.suppliers.map(s => `<span class="chip ${f.supplierIds.includes(s.id) ? 'selected' : ''}" data-sup="${s.id}">${esc(s.name)}</span>`).join('')}
+        </div>` : ''}
+      <div class="modal-actions">
+        <button class="btn outline" data-clear-all>Clear all</button>
+        <button class="btn primary" data-apply>Apply filters</button>
+      </div>
+    `;
+  }
+  function wire() {
+    document.querySelectorAll('[data-cat]').forEach(el => el.addEventListener('click', () => {
+      const c = el.dataset.cat;
+      f.categories = f.categories.includes(c) ? f.categories.filter(x => x !== c) : [...f.categories, c];
+      refresh();
+    }));
+    document.querySelectorAll('[data-item]').forEach(el => el.addEventListener('click', () => {
+      const id = el.dataset.item;
+      f.itemIds = f.itemIds.includes(id) ? f.itemIds.filter(x => x !== id) : [...f.itemIds, id];
+      refresh();
+    }));
+    document.querySelectorAll('[data-sup]').forEach(el => el.addEventListener('click', () => {
+      const id = el.dataset.sup;
+      f.supplierIds = f.supplierIds.includes(id) ? f.supplierIds.filter(x => x !== id) : [...f.supplierIds, id];
+      refresh();
+    }));
+    document.querySelector('[data-clear-all]').addEventListener('click', () => {
+      f.categories = []; f.itemIds = []; f.supplierIds = [];
+      refresh();
+    });
+    document.querySelector('[data-apply]').addEventListener('click', () => { closeModal(); onApply(); });
+  }
+  function refresh() { document.querySelector('[data-modal-sheet]').innerHTML = body(); wire(); }
+  openModal(body());
+  wire();
+}
+
+/* =====================================================================
+   REPORTS
+   ===================================================================== */
+let reportState = { selectedDate: startOfDay(new Date()), range: 'day' };
+
+function rangeBounds() {
+  const d = reportState.selectedDate;
+  switch (reportState.range) {
+    case 'day': {
+      const start = startOfDay(d);
+      return [start, new Date(start.getTime() + 86400000)];
+    }
+    case 'week': {
+      const day = d.getDay() === 0 ? 7 : d.getDay(); // Monday-start week
+      const start = startOfDay(new Date(d.getTime() - (day - 1) * 86400000));
+      return [start, new Date(start.getTime() + 7 * 86400000)];
+    }
+    case 'month': {
+      const start = new Date(d.getFullYear(), d.getMonth(), 1);
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      return [start, end];
+    }
+    case 'year': {
+      const start = new Date(d.getFullYear(), 0, 1);
+      const end = new Date(d.getFullYear() + 1, 0, 1);
+      return [start, end];
+    }
+  }
+}
+
+function rangeLabel() {
+  const [start, end] = rangeBounds();
+  const opts = { year: 'numeric', month: 'short', day: 'numeric' };
+  switch (reportState.range) {
+    case 'day': return start.toLocaleDateString(undefined, { weekday: 'long', ...opts });
+    case 'week': return `${start.toLocaleDateString(undefined, opts)} – ${new Date(end.getTime() - 86400000).toLocaleDateString(undefined, opts)}`;
+    case 'month': return start.toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+    case 'year': return `${start.getFullYear()}`;
+  }
+}
+
+function renderReports() {
+  const [start, end] = rangeBounds();
+  const sales = DB.sales.filter(s => { const d = new Date(s.date); return d >= start && d < end; });
+  const purchases = DB.purchases.filter(p => { const d = new Date(p.date); return d >= start && d < end; });
+  const f = state.reportFilters;
+  const visibleSales = sales.filter(s => saleMatchesFilter(s, f));
+  const visiblePurchases = purchases.filter(p => purchaseMatchesFilter(p, f));
+  const totals = totalsFor(visibleSales, visiblePurchases, { itemIds: [], categories: [], supplierIds: [] });
+  const activeCount = filtersActive(f);
+
+  return `
+    ${topbar('Reports', { back: true, actions: [
+      iconBtn('&#128269;', 'data-filters', activeCount || ''),
+      iconBtn('&#128200;', 'data-compare', ''),
+      iconBtn('&#128197;', 'data-pick-date', ''),
+    ] })}
+    <main>
+      <div class="segmented" style="margin-bottom:14px;">
+        <button data-range="day" class="${reportState.range === 'day' ? 'active' : ''}">Day</button>
+        <button data-range="week" class="${reportState.range === 'week' ? 'active' : ''}">Week</button>
+        <button data-range="month" class="${reportState.range === 'month' ? 'active' : ''}">Month</button>
+        <button data-range="year" class="${reportState.range === 'year' ? 'active' : ''}">Year</button>
+      </div>
+      <div class="center-text small-text muted" style="margin-bottom:10px;">${rangeLabel()}</div>
+      ${activeCount > 0 ? `<div class="center-text" style="margin-bottom:14px;"><span class="chip dismissable" data-clear-filters>${activeCount} filter(s) active &times;</span></div>` : ''}
+      <div class="grid3" style="margin-bottom:22px;">
+        <div class="stat-tile"><div class="label">Revenue</div><div class="value">${fmt(totals.revenue)}</div></div>
+        <div class="stat-tile"><div class="label">Cost</div><div class="value">${fmt(totals.cost)}</div></div>
+        <div class="stat-tile positive"><div class="label">Profit</div><div class="value">${fmt(totals.profit)}</div></div>
+      </div>
+      <h2 class="section-title">Sales (${visibleSales.length})</h2>
+      ${visibleSales.length === 0 ? `<div class="small-text muted" style="margin-bottom:16px;">No sales in this period</div>` :
+        visibleSales.map(s => transactionTicket(s, true)).join('')}
+      <div class="spacer-16"></div>
+      <h2 class="section-title">Purchases (${visiblePurchases.length}) · total cost ${fmt(totals.purchaseCost)}</h2>
+      ${visiblePurchases.length === 0 ? `<div class="small-text muted">No purchases in this period</div>` :
+        visiblePurchases.map(p => transactionTicket(p, false)).join('')}
+    </main>
+  `;
+}
+
+function transactionTicket(t, isSale) {
+  const time = new Date(t.date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const title = isSale ? `Sale · ${t.items.length} item(s)` : esc(t.supplierName || 'Purchase');
+  return `
+    <div class="ticket ${isSale ? 'sale' : ''}" data-expand="${t.id}">
+      <div class="row">
+        <div><div class="title">${title}</div><div class="sub">${time}</div></div>
+        <div style="display:flex;align-items:center;gap:4px;">
+          ${isSale ? `<span class="trail">${fmt(t.totalRevenue)}</span>` : ''}
+          <button class="menu-btn" data-edit-tx="${t.id}" data-is-sale="${isSale}">&#9998;</button>
+          <button class="menu-btn" data-delete-tx="${t.id}" data-is-sale="${isSale}" style="color:var(--negative);">&#128465;</button>
+        </div>
+      </div>
+      <div class="line-items" data-detail="${t.id}" style="display:none;">
+        ${t.items.map(i => `<div class="line-item"><span>${esc(i.itemName)} &times; ${fmt(i.quantity)}</span><span>@ ${fmt(isSale ? i.salePricePerUnit : i.costPerUnit)}</span></div>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function wireReports() {
+  document.querySelector('[data-back]').addEventListener('click', () => go('dashboard'));
+  document.querySelectorAll('[data-range]').forEach(el => el.addEventListener('click', () => { reportState.range = el.dataset.range; render(); }));
+  document.querySelector('[data-filters]').addEventListener('click', () => openFilterSheet(() => render()));
+  document.querySelector('[data-compare]').addEventListener('click', () => go('compare'));
+  document.querySelector('[data-pick-date]').addEventListener('click', () => {
+    openModal(`<h3>Pick a date</h3><div class="field"><input type="date" id="rep-date" value="${reportState.selectedDate.toISOString().slice(0,10)}" /></div><div class="modal-actions"><button class="btn primary" data-apply-date style="width:100%;">Apply</button></div>`, { center: true });
+    document.querySelector('[data-apply-date]').addEventListener('click', () => {
+      reportState.selectedDate = startOfDay(new Date(document.getElementById('rep-date').value));
+      closeModal();
+      render();
+    });
+  });
+  const clearFilters = document.querySelector('[data-clear-filters]');
+  if (clearFilters) clearFilters.addEventListener('click', () => { state.reportFilters = { itemIds: [], categories: [], supplierIds: [] }; render(); });
+
+  document.querySelectorAll('[data-expand]').forEach(ticket => {
+    ticket.addEventListener('click', (e) => {
+      if (e.target.closest('[data-edit-tx]') || e.target.closest('[data-delete-tx]')) return;
+      const detail = ticket.querySelector('[data-detail]');
+      detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
+    });
+  });
+  document.querySelectorAll('[data-edit-tx]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = btn.dataset.editTx;
+    if (btn.dataset.isSale === 'true') enterSaleForm(id); else enterPurchaseForm(id);
+  }));
+  document.querySelectorAll('[data-delete-tx]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = btn.dataset.deleteTx;
+    const isSale = btn.dataset.isSale === 'true';
+    confirmDialog(
+      'Delete transaction?',
+      isSale ? 'This removes the sale and restores its items back into stock.' : 'This removes the purchase — only possible if none of its stock has been sold yet.',
+      'Delete',
+      () => {
+        try {
+          if (isSale) deleteSale(id); else deletePurchase(id);
+          render();
+          showToast('Transaction deleted');
+        } catch (err) {
+          if (err instanceof PurchaseHasConsumedStockError) {
+            showToast(`Can't delete: stock already sold (${err.affectedItemNames.join(', ')}).`, { duration: 5000 });
+          } else {
+            showToast('Could not delete: ' + err.message);
+          }
+        }
+      }
+    );
+  }));
+}
+
+/* =====================================================================
+   COMPARE — day/month/year trend charts, drawn as plain inline SVG so
+   this file has zero external dependencies and works fully offline.
+   ===================================================================== */
+let compareState = { granularity: 'day', count: 7 };
+const COUNT_OPTIONS = { day: [7, 14, 30], month: [3, 6, 12], year: [3, 5, 10] };
+
+function periodStart(index) {
+  const now = new Date();
+  switch (compareState.granularity) {
+    case 'day': { const today = startOfDay(now); return new Date(today.getTime() - index * 86400000); }
+    case 'month': return new Date(now.getFullYear(), now.getMonth() - index, 1);
+    case 'year': return new Date(now.getFullYear() - index, 0, 1);
+  }
+}
+function periodEnd(start) {
+  switch (compareState.granularity) {
+    case 'day': return new Date(start.getTime() + 86400000);
+    case 'month': return new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    case 'year': return new Date(start.getFullYear() + 1, 0, 1);
+  }
+}
+function periodLabel(start) {
+  switch (compareState.granularity) {
+    case 'day': return start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    case 'month': return start.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+    case 'year': return `${start.getFullYear()}`;
+  }
+}
+
+function computePeriods() {
+  const f = state.reportFilters;
+  const periods = [];
+  for (let i = compareState.count - 1; i >= 0; i--) {
+    const start = periodStart(i);
+    const end = periodEnd(start);
+    const sales = DB.sales.filter(s => { const d = new Date(s.date); return d >= start && d < end; });
+    const purchases = DB.purchases.filter(p => { const d = new Date(p.date); return d >= start && d < end; });
+    const t = totalsFor(sales, purchases, f);
+    periods.push({ start, ...t });
+  }
+  return periods;
+}
+
+function renderCompare() {
+  const periods = computePeriods();
+  const hasData = periods.some(p => p.saleCount > 0 || p.purchaseCount > 0);
+  const activeCount = filtersActive(state.reportFilters);
+
+  return `
+    ${topbar('Compare', { back: true, actions: [iconBtn('&#128269;', 'data-filters', activeCount || '')] })}
+    <main>
+      <div class="segmented" style="margin-bottom:10px;">
+        <button data-gran="day" class="${compareState.granularity === 'day' ? 'active' : ''}">Days</button>
+        <button data-gran="month" class="${compareState.granularity === 'month' ? 'active' : ''}">Months</button>
+        <button data-gran="year" class="${compareState.granularity === 'year' ? 'active' : ''}">Years</button>
+      </div>
+      <div class="chip-row" style="margin-bottom:14px;">
+        ${COUNT_OPTIONS[compareState.granularity].map(n => `<span class="chip ${compareState.count === n ? 'selected' : ''}" data-count="${n}">Last ${n}</span>`).join('')}
+      </div>
+      ${activeCount > 0 ? `<div style="margin-bottom:14px;"><span class="chip dismissable" data-clear-filters>${activeCount} filter(s) active &times;</span></div>` : ''}
+      ${!hasData ? `<div class="empty-state">No data in this range yet</div>` : `
+        ${summaryCardsHtml(periods)}
+        <div class="spacer-16"></div>
+        ${averagesCardHtml(periods)}
+        <div class="spacer-24"></div>
+        <h2 class="section-title">Revenue vs cost vs profit</h2>
+        ${barChartSvg(periods)}
+        <div class="spacer-24"></div>
+        <h2 class="section-title">Profit trend</h2>
+        ${lineChartSvg(periods)}
+        <div class="spacer-24"></div>
+        <h2 class="section-title">Period-by-period</h2>
+        ${periodTableHtml(periods)}
+      `}
+    </main>
+  `;
+}
+
+function wireCompare() {
+  document.querySelector('[data-back]').addEventListener('click', () => go('reports'));
+  document.querySelectorAll('[data-gran]').forEach(el => el.addEventListener('click', () => {
+    compareState.granularity = el.dataset.gran;
+    compareState.count = COUNT_OPTIONS[compareState.granularity][0];
+    render();
+  }));
+  document.querySelectorAll('[data-count]').forEach(el => el.addEventListener('click', () => { compareState.count = parseInt(el.dataset.count); render(); }));
+  document.querySelector('[data-filters]').addEventListener('click', () => openFilterSheet(() => render()));
+  const clearFilters = document.querySelector('[data-clear-filters]');
+  if (clearFilters) clearFilters.addEventListener('click', () => { state.reportFilters = { itemIds: [], categories: [], supplierIds: [] }; render(); });
+}
+
+function pctChange(now, before) {
+  if (!before) return null;
+  return ((now - before) / Math.abs(before)) * 100;
+}
+function deltaHtml(pct) {
+  if (pct === null || pct === undefined) return '';
+  const up = pct >= 0;
+  return `<div class="delta ${up ? 'up' : 'down'}">${up ? '&#9650;' : '&#9660;'} ${Math.abs(pct).toFixed(0)}%</div>`;
+}
+
+function summaryCardsHtml(periods) {
+  const current = periods[periods.length - 1];
+  const previous = periods.length > 1 ? periods[periods.length - 2] : null;
+  function tile(label, val, prevVal, cls) {
+    return `<div class="stat-tile ${cls || ''}"><div class="label">${label}</div><div class="value">${fmt(val)}</div>${previous ? deltaHtml(pctChange(val, prevVal)) : ''}</div>`;
+  }
+  return `<div class="grid3">
+    ${tile('Revenue', current.revenue, previous ? previous.revenue : null)}
+    ${tile('Cost', current.cost, previous ? previous.cost : null)}
+    ${tile('Profit', current.profit, previous ? previous.profit : null, 'positive')}
+  </div>`;
+}
+
+function averagesCardHtml(periods) {
+  const n = periods.length;
+  const avg = (key) => periods.reduce((s, p) => s + p[key], 0) / n;
+  const noun = compareState.granularity === 'day' ? 'day' : compareState.granularity === 'month' ? 'month' : 'year';
+  return `
+    <div style="background:var(--surface-alt);border-radius:var(--radius-sm);padding:14px;">
+      <div class="small-text muted" style="margin-bottom:10px;">Average per ${noun} (over ${n} ${n === 1 ? noun : noun + 's'})</div>
+      <div class="grid3" style="gap:10px;">
+        <div><div class="small-text muted">Revenue</div><strong>${fmt(avg('revenue'))}</strong></div>
+        <div><div class="small-text muted">Cost</div><strong>${fmt(avg('cost'))}</strong></div>
+        <div><div class="small-text muted" style="color:var(--positive)">Profit</div><strong style="color:var(--positive)">${fmt(avg('profit'))}</strong></div>
+      </div>
+    </div>
+  `;
+}
+
+function periodTableHtml(periods) {
+  const reversed = [...periods].reverse();
+  return reversed.map((p, i) => {
+    const prev = reversed[i + 1];
+    const pct = prev ? pctChange(p.profit, prev.profit) : null;
+    return `
+      <div class="ticket">
+        <div class="row">
+          <strong style="flex:1;">${periodLabel(p.start)}</strong>
+          <div class="small-text" style="text-align:right;">
+            <div>Rev ${fmt(p.revenue)}</div>
+            <div>Cost ${fmt(p.cost)}</div>
+            <div style="font-weight:700;">Profit ${fmt(p.profit)}</div>
+          </div>
+          ${pct !== null ? `<div style="width:50px;">${deltaHtml(pct)}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ---- minimal inline SVG chart renderers ---- */
+function barChartSvg(periods) {
+  const W = 320, H = 180, padBottom = 20, padTop = 10;
+  const maxVal = Math.max(1, ...periods.flatMap(p => [p.revenue, p.cost, Math.abs(p.profit)]));
+  const groupW = W / periods.length;
+  const barW = Math.max(2, groupW / 4.5);
+  const scale = (H - padBottom - padTop) / maxVal;
+  const colors = { revenue: 'var(--warning)', cost: 'var(--negative)', profit: 'var(--positive)' };
+
+  let bars = '';
+  periods.forEach((p, i) => {
+    const cx = i * groupW + groupW / 2;
+    [['revenue', p.revenue], ['cost', p.cost], ['profit', p.profit]].forEach(([key, val], j) => {
+      const h = Math.abs(val) * scale;
+      const x = cx - barW * 1.6 + j * (barW + 2);
+      const y = H - padBottom - h;
+      bars += `<rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${colors[key]}" rx="1.5"></rect>`;
+    });
+  });
+  const step = periods.length > 10 ? Math.ceil(periods.length / 6) : 1;
+  let labels = '';
+  periods.forEach((p, i) => {
+    if (i % step !== 0 && i !== periods.length - 1) return;
+    labels += `<text x="${i * groupW + groupW / 2}" y="${H - 4}" font-size="8" text-anchor="middle" fill="var(--text-muted)">${periodLabel(p.start)}</text>`;
+  });
+  return `
+    <svg class="chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${bars}${labels}</svg>
+    <div class="chip-row small-text" style="margin-top:6px;">
+      <span><span style="display:inline-block;width:8px;height:8px;background:var(--warning);border-radius:2px;margin-right:4px;"></span>Revenue</span>
+      <span><span style="display:inline-block;width:8px;height:8px;background:var(--negative);border-radius:2px;margin-right:4px;"></span>Cost</span>
+      <span><span style="display:inline-block;width:8px;height:8px;background:var(--positive);border-radius:2px;margin-right:4px;"></span>Profit</span>
+    </div>
+  `;
+}
+
+function lineChartSvg(periods) {
+  const W = 320, H = 150, pad = 16;
+  const vals = periods.map(p => p.profit);
+  const min = Math.min(0, ...vals), max = Math.max(0, ...vals);
+  const range = (max - min) || 1;
+  const stepX = (W - pad * 2) / Math.max(1, periods.length - 1);
+  const scaleY = (H - pad * 2) / range;
+  const yForZero = H - pad - (0 - min) * scaleY;
+
+  const points = periods.map((p, i) => {
+    const x = pad + i * stepX;
+    const y = H - pad - (p.profit - min) * scaleY;
+    return [x, y];
+  });
+  const path = points.map((pt, i) => `${i === 0 ? 'M' : 'L'}${pt[0].toFixed(1)},${pt[1].toFixed(1)}`).join(' ');
+  const areaPath = `${path} L${points[points.length - 1][0].toFixed(1)},${yForZero.toFixed(1)} L${points[0][0].toFixed(1)},${yForZero.toFixed(1)} Z`;
+  const dots = points.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" fill="var(--positive)"></circle>`).join('');
+
+  return `
+    <svg class="chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+      <line x1="${pad}" y1="${yForZero.toFixed(1)}" x2="${W - pad}" y2="${yForZero.toFixed(1)}" stroke="var(--border)" stroke-width="1"></line>
+      <path d="${areaPath}" fill="var(--positive)" opacity="0.12"></path>
+      <path d="${path}" fill="none" stroke="var(--positive)" stroke-width="2"></path>
+      ${dots}
+    </svg>
+  `;
+}
+
+/* =====================================================================
+   LOANS — a loan person (like a supplier) with a running ledger of
+   "they owe us" / "we owe them" entries, netted into one balance.
+   ===================================================================== */
+function balanceForPerson(personId) {
+  return DB.loanEntries
+    .filter(e => e.personId === personId)
+    .reduce((s, e) => s + (e.direction === 'theyOweUs' ? e.amount : -e.amount), 0);
+}
+
+function renderLoans() {
+  const balances = {};
+  for (const p of DB.loanPeople) balances[p.id] = balanceForPerson(p.id);
+  const totalWeOwe = Object.values(balances).filter(b => b < 0).reduce((s, b) => s - b, 0);
+  const totalOwedToUs = Object.values(balances).filter(b => b > 0).reduce((s, b) => s + b, 0);
+
+  return `
+    ${topbar('Loans', { back: true })}
+    <main>
+      ${DB.loanPeople.length === 0 ? `<div class="empty-state">No one added yet — tap + to add a supplier or customer</div>` : `
+        <div class="grid2" style="margin-bottom:16px;">
+          <div class="stat-tile negative"><div class="label">We owe</div><div class="value">${fmt(totalWeOwe)}</div></div>
+          <div class="stat-tile positive"><div class="label">Owed to us</div><div class="value">${fmt(totalOwedToUs)}</div></div>
+        </div>
+        ${DB.loanPeople.map(p => {
+          const bal = balances[p.id];
+          const weOwe = bal < 0;
+          const settled = bal === 0;
+          return `
+          <div class="ticket" data-open-person="${p.id}" style="cursor:pointer;">
+            <div class="row">
+              <div><div class="title">${esc(p.name)}</div><div class="sub">${esc(p.phone || 'No phone number')}</div></div>
+              <div style="text-align:right;">
+                <div style="font-weight:700;color:${settled ? 'var(--text-muted)' : weOwe ? 'var(--negative)' : 'var(--positive)'}">${settled ? 'Settled' : fmt(Math.abs(bal))}</div>
+                ${!settled ? `<div class="small-text muted">${weOwe ? 'we owe' : 'owed to us'}</div>` : ''}
+              </div>
+              <button class="menu-btn" data-quick-add="${p.id}">&#10133;</button>
+            </div>
+          </div>`;
+        }).join('')}
+      `}
+    </main>
+    <button class="fab" data-add-person>+</button>
+  `;
+}
+
+function wireLoans() {
+  document.querySelector('[data-back]').addEventListener('click', () => go('dashboard'));
+  document.querySelector('[data-add-person]').addEventListener('click', () => openLoanPersonModal());
+  document.querySelectorAll('[data-open-person]').forEach(el =>
+    el.addEventListener('click', (e) => { if (e.target.closest('[data-quick-add]')) return; go('loanPerson', { loanPersonId: el.dataset.openPerson }); })
+  );
+  document.querySelectorAll('[data-quick-add]').forEach(btn =>
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openLoanEntryModal(btn.dataset.quickAdd); })
+  );
+}
+
+function openLoanPersonModal(existing) {
+  openModal(`
+    <h3>${existing ? 'Edit person' : 'New person'}</h3>
+    <div class="field"><label class="field-label">Supplier / customer name</label><input id="lp-name" value="${existing ? esc(existing.name) : ''}" /></div>
+    <div class="field"><label class="field-label">Phone number</label><input id="lp-phone" value="${existing ? esc(existing.phone || '') : ''}" /></div>
+    <div class="modal-actions">
+      <button class="btn outline" data-cancel>Cancel</button>
+      <button class="btn primary" data-save>Save</button>
+    </div>
+  `, { center: true });
+  document.querySelector('[data-cancel]').addEventListener('click', closeModal);
+  document.querySelector('[data-save]').addEventListener('click', () => {
+    const name = document.getElementById('lp-name').value.trim();
+    if (!name) return;
+    const phone = document.getElementById('lp-phone').value.trim();
+    if (existing) Object.assign(existing, { name, phone });
+    else DB.loanPeople.push({ id: uid(), name, phone });
+    save();
+    closeModal();
+    render();
+  });
+}
+
+function openLoanEntryModal(personId, existing) {
+  let direction = existing ? existing.direction : 'theyOweUs';
+  function body() {
+    return `
+      <h3>${existing ? 'Edit entry' : 'New entry'}</h3>
+      <div class="segmented" style="margin-bottom:14px;">
+        <button data-dir="theyOweUs" class="${direction === 'theyOweUs' ? 'active' : ''}">Owed to us</button>
+        <button data-dir="weOweThem" class="${direction === 'weOweThem' ? 'active' : ''}">We owe them</button>
+      </div>
+      <div class="field"><label class="field-label">Amount</label><input id="le-amount" type="number" value="${existing ? existing.amount : ''}" autofocus /></div>
+      <div class="field"><label class="field-label">Note (optional)</label><input id="le-note" value="${existing ? esc(existing.note || '') : ''}" /></div>
+      <div class="modal-actions">
+        <button class="btn outline" data-cancel>Cancel</button>
+        <button class="btn primary" data-save>Save</button>
+      </div>
+    `;
+  }
+  function wire() {
+    document.querySelectorAll('[data-dir]').forEach(el => el.addEventListener('click', () => { direction = el.dataset.dir; refresh(); }));
+    document.querySelector('[data-cancel]').addEventListener('click', closeModal);
+    document.querySelector('[data-save]').addEventListener('click', () => {
+      const amount = parseFloat(document.getElementById('le-amount').value) || 0;
+      if (amount <= 0) return;
+      const note = document.getElementById('le-note').value.trim();
+      if (existing) {
+        Object.assign(existing, { direction, amount, note });
+      } else {
+        DB.loanEntries.push({ id: uid(), personId, direction, amount, note, date: todayISO() });
+      }
+      save();
+      closeModal();
+      render();
+    });
+  }
+  function refresh() { document.querySelector('[data-modal-sheet]').innerHTML = body(); wire(); }
+  openModal(body(), { center: true });
+  wire();
+}
+
+function renderLoanPersonDetail(personId) {
+  const person = DB.loanPeople.find(p => p.id === personId);
+  if (!person) return renderLoans();
+  const entries = DB.loanEntries.filter(e => e.personId === personId).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const bal = balanceForPerson(personId);
+  const weOwe = bal < 0, settled = bal === 0;
+
+  return `
+    ${topbar(person.name, { back: true, actions: [iconBtn('&#9998;', 'data-edit-person', '')] })}
+    <main>
+      <div class="balance-card" style="background:${settled ? 'var(--surface-alt)' : weOwe ? 'color-mix(in srgb, var(--negative) 12%, var(--surface))' : 'color-mix(in srgb, var(--positive) 12%, var(--surface))'}">
+        <div class="small-text muted">Balance</div>
+        <div style="font-size:26px;font-weight:700;color:${settled ? 'var(--text-muted)' : weOwe ? 'var(--negative)' : 'var(--positive)'}">${settled ? 'Settled' : fmt(Math.abs(bal))}</div>
+        ${!settled ? `<div class="small-text muted">${weOwe ? `We owe ${esc(person.name)}` : `${esc(person.name)} owes us`}</div>` : ''}
+      </div>
+      ${entries.length === 0 ? `<div class="empty-state">No entries yet — tap + to add one</div>` :
+        entries.map(e => {
+          const owe = e.direction === 'weOweThem';
+          return `
+          <div class="ticket" style="border-left-color:${owe ? 'var(--negative)' : 'var(--positive)'}">
+            <div class="row">
+              <div>
+                <div class="title">${fmt(e.amount)}</div>
+                <div class="sub">${owe ? 'We owe them' : 'Owed to us'} · ${new Date(e.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}${e.note ? `<br>${esc(e.note)}` : ''}</div>
+              </div>
+              <button class="menu-btn" data-entry-menu="${e.id}">&#8942;</button>
+            </div>
+          </div>`;
+        }).join('')}
+    </main>
+    <button class="fab" data-add-entry>+</button>
+  `;
+}
+
+function wireLoanPersonDetail() {
+  const personId = state.loanPersonId;
+  document.querySelector('[data-back]').addEventListener('click', () => go('loans'));
+  document.querySelector('[data-edit-person]').addEventListener('click', () => openLoanPersonModal(DB.loanPeople.find(p => p.id === personId)));
+  document.querySelector('[data-add-entry]').addEventListener('click', () => openLoanEntryModal(personId));
+  document.querySelectorAll('[data-entry-menu]').forEach(btn => btn.addEventListener('click', () => {
+    const entry = DB.loanEntries.find(e => e.id === btn.dataset.entryMenu);
+    openModal(`
+      <h3>Entry</h3>
+      <button class="btn ghost" data-edit style="margin-bottom:8px;">Edit</button>
+      <button class="btn ghost" data-delete style="color:var(--negative);">Delete</button>
+    `, { center: true });
+    document.querySelector('[data-edit]').addEventListener('click', () => { closeModal(); openLoanEntryModal(personId, entry); });
+    document.querySelector('[data-delete]').addEventListener('click', () => {
+      closeModal();
+      DB.loanEntries = DB.loanEntries.filter(e => e.id !== entry.id);
+      save();
+      render();
+    });
+  }));
+}
+
+/* =====================================================================
+   BOOTSTRAP
+   ===================================================================== */
+go('locked');
+</script>
+</body>
+</html>
